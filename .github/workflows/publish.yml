@@ -1,0 +1,68 @@
+name: Publish GitHub Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.17.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@rsv-tragsa'
+      - run: pnpm install --frozen-lockfile
+      - name: Verify tag matches package version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "v$version"
+      - run: pnpm test
+      - name: Pack and smoke test
+        shell: bash
+        run: |
+          tarball="$(npm pack --silent)"
+          mkdir "$RUNNER_TEMP/package-smoke"
+          cd "$RUNNER_TEMP/package-smoke"
+          pnpm init
+          pnpm add "$GITHUB_WORKSPACE/$tarball"
+          pnpm exec puml-for-markdown --help
+      - name: Refuse an existing version
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          package="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          set +e
+          lookup="$(npm view "$package@$version" version --registry=https://npm.pkg.github.com 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "$package@$version already exists" >&2
+            exit 1
+          fi
+          if ! printf '%s' "$lookup" | grep -q 'E404'; then
+            printf '%s\n' "$lookup" >&2
+            exit "$status"
+          fi
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm publish

@@ -1,49 +1,60 @@
 {
-  "name": "puml-for-markdown",
-  "version": "1.2.1",
-  "description": "An application to add interactive PUML diagrams to your github markdown files. If running with default arguments, run in project root directory.",
+  "name": "@rsv-tragsa/puml-for-markdown",
+  "version": "2.0.0",
+  "description": "Incrementally generate PlantUML images and maintain Markdown links.",
   "main": "index.js",
+  "types": "index.d.ts",
+  "type": "commonjs",
   "scripts": {
-    "prepare": "husky install"
+    "test": "node --test test/*.test.js",
+    "pack:check": "npm pack --dry-run"
   },
-  "author": "danielyaa5",
-  "license": "ISC",
+  "author": "Daniel Yakobian, rsvives and contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
-    "bent": "7.3.12",
-    "bluebird": "3.7.2",
     "commander": "8.2.0",
-    "gitignore-globs": "0.1.1",
-    "glob": "7.2.0",
-    "lodash": "4.17.21",
     "plantuml-encoder": "1.4.0",
     "tinyurl": "1.1.7"
   },
   "bin": {
     "puml-for-markdown": "./bin/index.js"
   },
+  "files": [
+    "bin/",
+    "examples/",
+    "lib/",
+    "skills/",
+    "index.js",
+    "index.d.ts",
+    "LICENSE.md",
+    "llms.txt",
+    "MIGRATION.md",
+    "puml-for-markdown.config.cjs",
+    "README.md"
+  ],
   "keywords": [
-    "uml",
-    "puml",
     "plantuml",
-    "c4-plantuml",
-    "c4",
-    "diagrams",
-    "git",
-    "github",
-    "md",
+    "puml",
     "markdown",
-    "generator",
-    "cli",
     "diagrams",
-    "documentation",
-    "architecture",
-    "architecture-diagrams"
+    "incremental",
+    "agent-skill",
+    "llms-txt",
+    "ai-agents"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/danielyaa5/puml-for-markdown"
+    "url": "git+https://github.com/rsv-tragsa/puml-for-markdown.git"
   },
-  "devDependencies": {
-    "husky": "7.0.4"
-  }
+  "bugs": {
+    "url": "https://github.com/rsv-tragsa/puml-for-markdown/issues"
+  },
+  "homepage": "https://github.com/rsv-tragsa/puml-for-markdown#readme"
 }

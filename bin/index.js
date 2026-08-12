@@ -1,94 +1,170 @@
 #!/usr/bin/env node
+'use strict'
 
-const path = require('path')
-const fs = require('fs')
+const fs = require('node:fs')
+const path = require('node:path')
+const { Command, Option } = require('commander')
+const { run } = require('../index')
+const { loadConfig } = require('../lib/config')
+const { DEFAULT_CONFIG, DEFAULT_CONFIG_FILENAME } = require('../lib/defaults')
+const { isPathInside } = require('../lib/paths')
+const { classifyChangedFiles } = require('../lib/selection')
 
-const {Command, Option} = require('commander')
+const collect = (value, previous = []) => previous.concat(value)
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key)
 
-const run = require(path.resolve(__dirname, '../index.js'))
+const createProgram = () => new Command()
+  .name('puml-for-markdown')
+  .description('Generate PlantUML images and update managed links in Markdown.')
+  .option('-c, --config <path>', `Configuration file (auto-detects ${DEFAULT_CONFIG_FILENAME})`)
+  .option('-s, --puml-server-url <url>', 'PlantUML server base URL')
+  .addOption(new Option('-x, --root-directory <path>', 'Project root'))
+  .option('-r, --hot-reload', 'Rerun using the selected files every interval')
+  .option('--no-hot-reload', 'Disable hot reload configured in the file')
+  .option('-v, --interval-seconds <number>', 'Hot reload interval in seconds', Number)
+  .option('-p, --puml-directory <path>', 'Directory containing PUML sources')
+  .option('-m, --markdown-directory <path>', 'Directory containing Markdown files')
+  .option('-g, --ignore-gitignore', 'Do not apply patterns from .gitignore')
+  .option('--respect-gitignore', 'Apply .gitignore even when disabled in the configuration file')
+  .option('-i, --gitignore-path <path>', 'Path to a .gitignore file')
+  .option('-d, --output-images', 'Download generated diagram images')
+  .option('--no-output-images', 'Disable image output configured in the file')
+  .addOption(new Option('-b, --dist-directory <path>', 'Directory for generated images'))
+  .addOption(new Option('-f, --image-formats <format>', 'Generated image format').choices(['png', 'svg', 'both']))
+  .addOption(new Option('--link-mode <mode>', 'Visible Markdown link mode').choices(['tinyurl', 'server', 'local']))
+  .addOption(new Option('--local-image-format <format>', 'Image used by local Markdown links').choices(['png', 'svg']))
+  .option('-t, --turn-off-link-shortening', 'Deprecated alias for --link-mode server')
+  .option('--puml-file <path>', 'Select one changed PUML file (repeatable)', collect)
+  .option('--markdown-file <path>', 'Select one changed Markdown file (repeatable)', collect)
+  .option('--changed-files-stdin0', 'Read NUL-separated changed paths and ignore files outside configured directories')
+  .option('--regenerate-all', 'Generate every PUML below pumlDirectory')
+  .option('--no-regenerate-all', 'Disable full regeneration configured in the file')
+  .option('--delete-orphan-images', 'Delete only managed images whose source no longer exists')
+  .option('--no-delete-orphan-images', 'Disable orphan cleanup configured in the file')
+  .option('--marker-pattern <regex>', 'Full marker regular expression with kind, label, and target named groups')
+  .option('--marker-flags <flags>', 'Flags for --marker-pattern (global matching is always enabled)')
 
+const configuredValue = (opts, optionName, config, configName = optionName) => {
+  if (opts[optionName] !== undefined) return opts[optionName]
+  if (hasOwn(config, configName)) return config[configName]
+  return DEFAULT_CONFIG[configName]
+}
 
-// =============
-// = CLI Setup =
-// =============
+const resolveCliOptions = (opts) => {
+  if (opts.turnOffLinkShortening && opts.linkMode && opts.linkMode !== 'server') {
+    throw new Error('--turn-off-link-shortening conflicts with --link-mode; use --link-mode server')
+  }
+  if (opts.ignoreGitignore && opts.respectGitignore) {
+    throw new Error('--ignore-gitignore conflicts with --respect-gitignore')
+  }
 
-new Command()
-  .description('An application to add interactive PUML diagrams to your github markdown files. If running with default arguments, run in project root directory.')
-  .option(
-    '-s, --puml-server-url <url>',
-    'This is the base URL used to render diagrams. Defaults to the public plantuml server.',
-    'https://www.plantuml.com/plantuml',
+  const discoveryRoot = path.resolve(opts.rootDirectory || process.cwd())
+  const loaded = loadConfig({ explicitPath: opts.config, searchDirectory: discoveryRoot })
+  const configuredRoot = path.resolve(
+    loaded.configDirectory,
+    hasOwn(loaded.config, 'rootDirectory') ? loaded.config.rootDirectory : DEFAULT_CONFIG.rootDirectory,
   )
-  .addOption(new Option(
-      '-x, --root-directory <path>',
-      'The path to your project'
-    ).default(process.cwd(), 'CWD')
-  )
-  .option(
-    '-r, --hot-reload',
-    'Rerun markdown generator every `interval` seconds, determined by interval option',
-  )
-  .option(
-    '-v, --interval-seconds <number>',
-    'If --hot-reload is set, how often should it reload',
-    2,
-  )
-  .addOption(new Option(
-      '-p, --puml-directory <path>',
-      'Path to directory containing puml files which are referenced in markdown files',
-    ).default(false, 'rootDirectory')
-  )
-  .addOption(new Option(
-      '-m, --markdown-directory <path>',
-      'Path to directory containing markdown files referencing puml files',
-    ).default(false, 'rootDirectory')
-  )
-  .option(
-    '-g, --ignore-gitignore',
-    "Don't use .gitignore to skip PUML and MD. Will automatically be true if no gitignore is found",
-  )
-  .addOption(new Option(
-      '-i, --gitignore-path <path>',
-      'Use this as path to .gitignore file.'
-    ).default(false, 'rootDirectory/.gitignore')
-  )
-  .option(
-    '-d, --output-images',
-    'If set, will output images of diagrams to the dist directory',
-  )
-  .addOption(new Option(
-      '-b, --dist-directory <path>',
-      'If --output-images is set, path to output diagram images'
-    ).default(false, 'rootDirectory/dist_puml')
-  )
-  .addOption(new Option(
-      '-f, --image-formats <format>',
-      'If --output-images is set, sets the output image format',
-    ).choices(['png', 'svg', 'both']).default('png')
-  )
-  .option(
-    '-t, --turn-off-link-shortening',
-    "Use the full puml server link instead of the tiny url, if your diagrams are too big this won't work",
-  )
-  .action(opts => {
-      const useDefaultGitignorePath = !opts.gitignorePath
+  const rootDirectory = opts.rootDirectory !== undefined
+    ? path.resolve(opts.rootDirectory)
+    : configuredRoot
 
-      opts.distDirectory = opts.distDirectory || path.resolve(opts.rootDirectory, 'dist_puml')
-      opts.gitignorePath = opts.gitignorePath || path.resolve(opts.rootDirectory, '.gitignore')
-      opts.markdownDirectory = opts.markdownDirectory || opts.rootDirectory
-      opts.pumlDirectory = opts.pumlDirectory || opts.rootDirectory
-      opts.shouldShortenLinks = !opts.turnOffLinkShortening
-      opts.respectGitignore = !opts.ignoreGitignore
-      opts.imageFormats = opts.imageFormats === 'both' ? ['png', 'svg'] : [opts.imageFormats]
+  let respectGitignore = configuredValue(opts, 'respectGitignore', loaded.config)
+  if (opts.ignoreGitignore) respectGitignore = false
 
-      // If a gitignore path wasn't specified, don't try and parse it
-      if (useDefaultGitignorePath && !fs.existsSync(opts.gitignorePath)) {
-          opts.respectGitignore = false
-      }
+  return {
+    rootDirectory,
+    pumlDirectory: configuredValue(opts, 'pumlDirectory', loaded.config),
+    markdownDirectory: configuredValue(opts, 'markdownDirectory', loaded.config),
+    distDirectory: configuredValue(opts, 'distDirectory', loaded.config),
+    pumlServerUrl: configuredValue(opts, 'pumlServerUrl', loaded.config),
+    outputImages: configuredValue(opts, 'outputImages', loaded.config),
+    imageFormats: configuredValue(opts, 'imageFormats', loaded.config),
+    linkMode: opts.turnOffLinkShortening ? 'server' : configuredValue(opts, 'linkMode', loaded.config),
+    localImageFormat: configuredValue(opts, 'localImageFormat', loaded.config),
+    pumlFiles: opts.pumlFile !== undefined ? opts.pumlFile : loaded.config.pumlFiles,
+    markdownFiles: opts.markdownFile !== undefined ? opts.markdownFile : loaded.config.markdownFiles,
+    changedFilesStdin0: configuredValue(opts, 'changedFilesStdin0', loaded.config),
+    regenerateAll: configuredValue(opts, 'regenerateAll', loaded.config),
+    deleteOrphanImages: configuredValue(opts, 'deleteOrphanImages', loaded.config),
+    markerPattern: configuredValue(opts, 'markerPattern', loaded.config),
+    markerFlags: configuredValue(opts, 'markerFlags', loaded.config),
+    respectGitignore,
+    gitignorePath: configuredValue(opts, 'gitignorePath', loaded.config),
+    hotReload: configuredValue(opts, 'hotReload', loaded.config),
+    intervalSeconds: configuredValue(opts, 'intervalSeconds', loaded.config),
+    configPath: loaded.configPath,
+  }
+}
 
-      return run(opts).catch((e) => {
-          console.error('FATAL EXCEPTION')
-          console.error(e)
-      })
+const optionsForRun = (effective, stdinBuffer) => {
+  let stdinSelection
+  if (effective.changedFilesStdin0) {
+    const classified = classifyChangedFiles(stdinBuffer || Buffer.alloc(0))
+    const pumlDirectory = path.resolve(effective.rootDirectory, effective.pumlDirectory)
+    const markdownDirectory = path.resolve(effective.rootDirectory, effective.markdownDirectory)
+    stdinSelection = {
+      pumlFiles: classified.pumlFiles.filter((file) =>
+        isPathInside(pumlDirectory, path.resolve(effective.rootDirectory, file))),
+      markdownFiles: classified.markdownFiles.filter((file) =>
+        isPathInside(markdownDirectory, path.resolve(effective.rootDirectory, file))),
+    }
+  }
+  const pumlSelectionProvided = effective.changedFilesStdin0 || effective.pumlFiles !== undefined
+  const markdownSelectionProvided = effective.changedFilesStdin0 || effective.markdownFiles !== undefined
+  return {
+    rootDirectory: effective.rootDirectory,
+    pumlDirectory: effective.pumlDirectory,
+    markdownDirectory: effective.markdownDirectory,
+    distDirectory: effective.distDirectory,
+    pumlServerUrl: effective.pumlServerUrl,
+    outputImages: effective.outputImages,
+    imageFormats: effective.imageFormats,
+    linkMode: effective.linkMode,
+    localImageFormat: effective.localImageFormat,
+    pumlFiles: pumlSelectionProvided
+      ? [...(effective.pumlFiles || []), ...(stdinSelection?.pumlFiles || [])]
+      : undefined,
+    markdownFiles: markdownSelectionProvided
+      ? [...(effective.markdownFiles || []), ...(stdinSelection?.markdownFiles || [])]
+      : undefined,
+    regenerateAll: effective.regenerateAll,
+    deleteOrphanImages: effective.deleteOrphanImages,
+    markerPattern: effective.markerPattern,
+    markerFlags: effective.markerFlags,
+    respectGitignore: effective.respectGitignore,
+    gitignorePath: effective.gitignorePath,
+  }
+}
+
+const main = async (argv = process.argv, stdin = process.stdin) => {
+  const program = createProgram()
+  program.parse(argv)
+  const effective = resolveCliOptions(program.opts())
+  const stdinBuffer = effective.changedFilesStdin0 ? fs.readFileSync(stdin.fd) : undefined
+  const runOptions = optionsForRun(effective, stdinBuffer)
+  const execute = async () => {
+    const result = await run(runOptions)
+    console.info(
+      `PUML generated: ${result.generatedImages.length}; Markdown processed: ${result.selectedMarkdown.length}; orphan images deleted: ${result.removedImages.length}`,
+    )
+    return result
+  }
+  await execute()
+  if (effective.hotReload) {
+    const interval = Number(effective.intervalSeconds)
+    if (!Number.isFinite(interval) || interval <= 0) throw new Error('--interval-seconds must be a positive number')
+    setInterval(() => execute().catch((error) => {
+      console.error(error.stack || error.message)
+      process.exitCode = 1
+    }), interval * 1000)
+  }
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`puml-for-markdown: ${error.message}`)
+    process.exitCode = 1
   })
-  .parse(process.argv)
+}
+
+module.exports = { createProgram, main, optionsForRun, resolveCliOptions }

@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+config_file="$repo_root/puml-for-markdown.config.cjs"
+
+# The generator reads the working tree, so stop before mixing partially staged
+# Markdown/PUML content or pre-existing unstaged files in the generated folder.
+dist_directory="$(node "$repo_root/examples/check-precommit-state.mjs" "$repo_root" "$config_file")"
+
+git -C "$repo_root" diff --cached --name-only -z --diff-filter=ACMRD | \
+  pnpm exec puml-for-markdown \
+    --config "$config_file" \
+    --changed-files-stdin0 \
+    --delete-orphan-images
+
+# No relevant file had unstaged content before generation, so these additions
+# cannot silently absorb pre-existing user edits.
+git -C "$repo_root" diff --cached --name-only -z --diff-filter=ACMR -- '*.md' | \
+  git -C "$repo_root" add --pathspec-from-file=- --pathspec-file-nul
+git -C "$repo_root" add -A -- "$dist_directory"

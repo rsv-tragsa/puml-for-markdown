@@ -1,0 +1,24 @@
+# @rsv-tragsa/puml-for-markdown
+
+> A Node.js 22+ CommonJS library and CLI that renders PlantUML diagrams as PNG or SVG and maintains managed links in Markdown, with full and incremental file selection.
+
+Use `puml-for-markdown.config.cjs` for CLI projects. Hidden Markdown markers that reference `.puml` files are the source of truth. The package includes an Agent Skill at `skills/puml-for-markdown/SKILL.md` and TypeScript declarations at `index.d.ts`.
+
+## Documentation
+
+- [Usage and configuration](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/README.md): Installation, markers, link modes, selection, includes, CLI, and CommonJS API.
+- [Migration from 1.x](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/MIGRATION.md): Breaking changes, compatibility, and initial cleanup.
+- [Configuration template](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/puml-for-markdown.config.cjs): Complete trusted CommonJS configuration file.
+- [Type declarations](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/index.d.ts): Machine-readable public API contract.
+
+## Agent resources
+
+- [Agent Skill](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/skills/puml-for-markdown/SKILL.md): Procedural guidance for configuring and using the package.
+- [Configuration reference](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/skills/puml-for-markdown/references/configuration.md): Options, defaults, marker requirements, and selection semantics.
+- [CLI workflows](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/skills/puml-for-markdown/references/cli.md): Complete and incremental execution, changed paths, renames, and includes.
+- [CommonJS API](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/skills/puml-for-markdown/references/api.md): Configuration loading, results, offline tests, and helper exports.
+
+## Optional
+
+- [Safe pre-commit hook](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/examples/pre-commit): Incremental NUL-delimited Git hook.
+- [Pre-commit safety check](https://raw.githubusercontent.com/rsv-tragsa/puml-for-markdown/main/examples/check-precommit-state.mjs): Working-tree validation used by the example hook.

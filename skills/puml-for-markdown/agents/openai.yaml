@@ -1,0 +1,4 @@
+interface:
+  display_name: "PUML for Markdown"
+  short_description: "Generate PlantUML diagrams for Markdown"
+  default_prompt: "Use $puml-for-markdown to configure and generate PlantUML diagrams for this project."
