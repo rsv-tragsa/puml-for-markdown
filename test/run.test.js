@@ -38,6 +38,32 @@ test('distinguishes full, incremental, and explicitly empty PUML selections', as
   assert.equal(empty.generatedImages.length, 0)
 })
 
+test('canonicalizes paths when the configured root is a symbolic link', async () => {
+  const workspace = createWorkspace()
+  const source = write(path.join(workspace.pumlDirectory, 'a.puml'), diagram())
+  const markdown = write(path.join(workspace.markdownDirectory, 'page.md'), '<!--![A](puml/a.puml)-->\n')
+  const aliasParent = fs.mkdtempSync(path.join(path.dirname(workspace.root), 'puml-md-alias-'))
+  const aliasRoot = path.join(aliasParent, 'project')
+  fs.symlinkSync(workspace.root, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir')
+  const aliasWorkspace = {
+    root: aliasRoot,
+    pumlDirectory: path.join(aliasRoot, 'docs', 'puml'),
+    markdownDirectory: path.join(aliasRoot, 'docs'),
+    distDirectory: path.join(aliasRoot, 'docs', 'puml', 'dist'),
+  }
+
+  const result = await run({
+    ...baseOptions(aliasWorkspace),
+    pumlFiles: [path.join(aliasWorkspace.pumlDirectory, 'a.puml')],
+    markdownFiles: [path.join(aliasWorkspace.markdownDirectory, 'page.md')],
+  })
+
+  assert.equal(result.rootDirectory, fs.realpathSync(workspace.root))
+  assert.deepEqual(result.selectedPuml, [fs.realpathSync(source)])
+  assert.deepEqual(result.selectedMarkdown, [fs.realpathSync(markdown)])
+  assert.match(fs.readFileSync(markdown, 'utf8'), /puml\/dist\/a\.svg/)
+})
+
 test('regenerateAll overrides an empty PUML selection but not the Markdown selection', async () => {
   const workspace = createWorkspace()
   write(path.join(workspace.pumlDirectory, 'a.puml'), diagram())
